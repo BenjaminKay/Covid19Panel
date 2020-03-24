@@ -31,7 +31,7 @@ MinCases = 500
 MinDeaths = 20
 # G7 Plus south korea
 # France, West Germany, Italy, Japan, the United Kingdom, and the United States
-SelectedCountryList = c("US", "Germany", "France", "Canada","Italy", "United Kingdom", "Japan", "Korea, South")
+SelectedCountryList = c("United States", "US", "Germany", "France", "Canada","Italy", "United Kingdom", "Japan", "Korea, South")
 url <- "https://en.wikipedia.org/wiki/List_of_countries_and_dependencies_by_population"
 url2 <- "https://en.wikipedia.org/wiki/List_of_U.S._state_abbreviations"
 r <- GET(url)
@@ -86,31 +86,33 @@ addWorksheet(wb, "recovered")
 
 
 writeData(wb, "confirmed", df_confirmed2, rowNames = TRUE)
-writeData(wb, "deaths", df_confirmed2, rowNames = TRUE)
-writeData(wb, "recovered", df_confirmed2, rowNames = TRUE)
-saveWorkbook(wb, paste("JHU_Covi19_Data_As_Of_",today(),  ".xlsx", sep=""), overwrite = TRUE)
+writeData(wb, "deaths", df_deaths2, rowNames = TRUE)
+writeData(wb, "recovered", df_recovered2, rowNames = TRUE)
+saveWorkbook(wb, paste("JHU_Covid19_Data_As_Of_",today(),  ".xlsx", sep=""), overwrite = TRUE)
 
 
 
 df_confirmed2$Date2 = mdy(df_confirmed2$Date)
 df_confirmed2$Country = df_confirmed2$`Country/Region`
+df_confirmed2$ConfirmedCases[is.na(df_confirmed2$ConfirmedCases)] = 0
+
 
 # df_confirmed3 <- left_join(df_confirmed2, df_confirmed2 %>% group_by(Country) %>% summarise(MaxConfirmedCases = max(ConfirmedCases)), by=c("Country"))
 
 
-df_confirmed2_grpDC <- df_confirmed2 %>% group_by(Date2, Country) %>% summarise(TotalConfirmedCases = sum(ConfirmedCases))
-df_confirmed3 <- left_join(df_confirmed2, df_confirmed2_grpDC %>% group_by(Country) %>% summarise(MaxConfirmedCases = max(TotalConfirmedCases)), by=c("Country"))
+df_confirmed2_grpDC <- df_confirmed2 %>% group_by(Date2, Country) %>% summarise(TotalConfirmedCases = sum(ConfirmedCases, rm.na=TRUE))
+df_confirmed3 <- left_join(df_confirmed2, df_confirmed2_grpDC %>% group_by(Country) %>% summarise(MaxConfirmedCases = max(TotalConfirmedCases, rm.na=TRUE)), by=c("Country"))
 df_confirmed3$Locale = df_confirmed3$`Province/State`
 
 df_confirmed4 <- within(df_confirmed3, FOO<-data.frame(do.call('rbind', strsplit(as.character(df_confirmed3$`Province/State`), ',', fixed=TRUE))))
 df_confirmed4$State <- as.character(df_confirmed4$FOO$X2)
 
 
-df_confirmed3_grpDC <- df_confirmed3 %>%  group_by(Date2, Country) %>% summarise(TotalConfirmedCases = sum(ConfirmedCases), MaxConfirmedCases2=median(MaxConfirmedCases))
-df_confirmed3_grpDCC <- df_confirmed3_grpDC %>%  filter(TotalConfirmedCases >=100) %>% group_by(Country) %>% summarise(MinDate=min(Date2), MaxDate=max(Date2), MinCases=min(TotalConfirmedCases))
+df_confirmed3_grpDC <- df_confirmed3 %>%  group_by(Date2, Country) %>% summarise(TotalConfirmedCases = sum(ConfirmedCases, rm.na=TRUE), MaxConfirmedCases2=max(MaxConfirmedCases, rm.na=TRUE))
+df_confirmed3_grpDCC <- df_confirmed3_grpDC %>%  filter(TotalConfirmedCases >=100) %>% group_by(Country) %>% summarise(MinDate=min(Date2), MaxDate=max(Date2), MinCases=min(TotalConfirmedCases, rm.na=TRUE))
 
 df_confirmed3_grpDC = left_join(df_confirmed3_grpDC, df_confirmed3_grpDCC, by="Country")
-# %>% filter(MaxConfirmedCases>=MinCases)
+
 
 df_confirmed3_grpDC2 = df_confirmed3_grpDC %>% filter(MaxConfirmedCases2>=MinCases, TotalConfirmedCases>=5) 
 df_confirmed3_grpDC2$GrowthDays = df_confirmed3_grpDC2$MaxDate - df_confirmed3_grpDC2$MinDate
@@ -196,11 +198,23 @@ plt4 <- df_confirmed3_grpDC2 %>% filter(Date2>=mdy("3/1/2020"), TotalConfirmedCa
 plt4
 
 
+plt7 <- df_confirmed3_grpDC2 %>% filter(Date2>=mdy("3/1/2020"), TotalConfirmedCases > MinCases, Country %in% SelectedCountryList) %>% ggplot(aes(x=Date2, y=TotalConfirmedCases, group=Country, color = Country)) +
+    geom_line()+
+    geom_point()+
+    scale_y_continuous(trans='log10', limits=c(1, 100000)) +     
+    scale_colour_discrete(guide = 'none') +
+    scale_x_date(expand=c(0, 4)) +
+    geom_dl(aes(label = Country), method = list(dl.trans(x = x + 0.2), "last.bumpup", cex = 0.8)) +
+    labs(x = "Date", y = "Confirmed Cases") 
+plt7
+
 
 # df_deaths2
 
 df_deaths2$Date2 = mdy(df_deaths2$Date)
 df_deaths2$Country = df_deaths2$`Country/Region`
+df_deaths2$DeathCases[is.na(df_deaths2$DeathCases)] = 0
+
 
 df_deaths2_grpDC <- df_deaths2 %>% group_by(Date2, Country) %>% summarise(TotalDeathCases = sum(DeathCases))
 df_deaths3 <- left_join(df_deaths2, df_deaths2_grpDC %>% group_by(Country) %>% summarise(MaxDeathCases = max(TotalDeathCases)), by=c("Country"))
@@ -288,3 +302,16 @@ df_confirmed_county <- content(text_confirmed_county, type = "text/csv", encodin
 df_deaths_county    <- content(text_death_county, type = "text/csv", encoding="UTF-8")
 df_confirmed_county2   <- df_confirmed_county %>% gather(Date, ConfirmedCases, -countyFIPS, -`County Name`,   -State,   -stateFIPS)
 df_deaths_county2      <- df_deaths_county %>% gather(Date, DeathCases, -countyFIPS, -`County Name`,   -State,   -stateFIPS)
+
+
+wb2 <- createWorkbook()
+
+## Add worksheets
+addWorksheet(wb2, "confirmed")
+addWorksheet(wb2, "deaths")
+
+
+writeData(wb2, "confirmed", df_confirmed_county2, rowNames = TRUE)
+writeData(wb2, "deaths", df_deaths_county2, rowNames = TRUE)
+saveWorkbook(wb2, paste("USA_County_Covid19_Data_As_Of_",today(),  ".xlsx", sep=""), overwrite = TRUE)
+
